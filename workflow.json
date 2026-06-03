@@ -1,0 +1,106 @@
+{
+  "name": "Lead Qualifier Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [240, 300],
+      "id": "b2c3d4e5-0002-0002-0002-000000000001",
+      "typeVersion": 2,
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer YOUR_GROQ_API_KEY" }]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "=application/json",
+        "body": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"You are a B2B lead qualifier. Score the lead from 1-10 and reply ONLY in JSON:\\n{\\\"score\\\": 0, \\\"budget\\\": \\\"\\\", \\\"urgency\\\": \\\"\\\", \\\"fit\\\": \\\"\\\", \\\"summary\\\": \\\"\\\", \\\"email_subject\\\": \\\"\\\", \\\"email_body\\\": \\\"\\\"}\\n\\nScore 7+ = hot lead. Generate a personalized reply email in Polish.\"},\n    {\"role\": \"user\", \"content\": \"Name: {{ $json.name }}\\nEmail: {{ $json.email }}\\nCompany: {{ $json.company }}\\nMessage: {{ $json.message }}\"}\n  ]\n}",
+        "options": {}
+      },
+      "name": "Groq AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [480, 300],
+      "id": "b2c3d4e5-0002-0002-0002-000000000002",
+      "typeVersion": 4.4
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.all()[0].json.choices[0].message.content;\nlet lead = {};\ntry { lead = JSON.parse(raw); } catch(e) { lead = { score: 0, summary: 'parse error' }; }\n\nconst webhookData = $('Webhook').first().json;\n\nreturn [{\n  json: {\n    name: webhookData.name || '',\n    email: webhookData.email || '',\n    company: webhookData.company || '',\n    score: lead.score || 0,\n    budget: lead.budget || '',\n    urgency: lead.urgency || '',\n    fit: lead.fit || '',\n    summary: lead.summary || '',\n    email_subject: lead.email_subject || '',\n    email_body: lead.email_body || '',\n    is_hot: (lead.score || 0) >= 7\n  }\n}];"
+      },
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "position": [720, 300],
+      "id": "b2c3d4e5-0002-0002-0002-000000000003",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [{ "leftValue": "={{ $json.is_hot }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }]
+        }
+      },
+      "name": "IF Hot Lead",
+      "type": "n8n-nodes-base.if",
+      "position": [960, 300],
+      "id": "b2c3d4e5-0002-0002-0002-000000000004",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Code in JavaScript').first().json.email }}",
+        "subject": "={{ $('Code in JavaScript').first().json.email_subject }}",
+        "message": "={{ $('Code in JavaScript').first().json.email_body }}",
+        "options": {}
+      },
+      "name": "Send Email to Lead",
+      "type": "n8n-nodes-base.gmail",
+      "position": [1200, 200],
+      "id": "b2c3d4e5-0002-0002-0002-000000000005",
+      "typeVersion": 2.1,
+      "credentials": {
+        "googleApi": { "id": "YOUR_GOOGLE_CREDENTIAL_ID", "name": "Google account" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🔥 HOT LEAD — Score: {{ $('Code in JavaScript').first().json.score }}/10\n\nName: {{ $('Code in JavaScript').first().json.name }}\nCompany: {{ $('Code in JavaScript').first().json.company }}\nEmail: {{ $('Code in JavaScript').first().json.email }}\n\nBudget: {{ $('Code in JavaScript').first().json.budget }}\nUrgency: {{ $('Code in JavaScript').first().json.urgency }}\nFit: {{ $('Code in JavaScript').first().json.fit }}\n\n📋 {{ $('Code in JavaScript').first().json.summary }}\n\n✅ Auto-reply sent!",
+        "additionalFields": {}
+      },
+      "name": "Alert Manager",
+      "type": "n8n-nodes-base.telegram",
+      "position": [1200, 400],
+      "id": "b2c3d4e5-0002-0002-0002-000000000006",
+      "typeVersion": 1.2,
+      "credentials": {
+        "telegramApi": { "id": "YOUR_TELEGRAM_CREDENTIAL_ID", "name": "Telegram account" }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Groq AI", "type": "main", "index": 0 }]] },
+    "Groq AI": { "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]] },
+    "Code in JavaScript": { "main": [[{ "node": "IF Hot Lead", "type": "main", "index": 0 }]] },
+    "IF Hot Lead": {
+      "main": [
+        [{ "node": "Send Email to Lead", "type": "main", "index": 0 }, { "node": "Alert Manager", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}
